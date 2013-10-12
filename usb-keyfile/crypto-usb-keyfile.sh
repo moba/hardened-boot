@@ -46,9 +46,9 @@
 #   to modify up top, and changed script output to match exactly the standard cryptsetup
 #   text as of Ubuntu 12.04
 #
-# 2013-10-12
-# Stripped down to a version that only mounts a specific LUKS crypted ext2 partition
-# specified by device name, to be used once for a root partition.
+# 2013-10-12 Moritz Bartl
+# Stripped down so it only mounts a specific LUKS crypted ext2 partition
+# specified by device name/UUID, to be used once for the root partition.
 # You will probably prefer the previous release of this script!
 DEV=/dev/disk/by-uuid/put-the-uuid-of-your-usb-partition-here
 FSTYPE=ext2
