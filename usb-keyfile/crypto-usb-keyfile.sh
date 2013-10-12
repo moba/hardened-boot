@@ -1,5 +1,7 @@
 #!/bin/sh
 
+DEV=/dev/disk/by-uuid/put-the-uuid-of-your-usb-partition-here
+
 # Part of passwordless cryptofs setup in Debian Etch.
 # See: http://wejn.org/how-to-make-passwordless-cryptsetup.html
 # Author: Wejn <wejn at box dot cz>
@@ -50,7 +52,6 @@
 # Stripped down so it only mounts a specific LUKS crypted ext2 partition
 # specified by device name/UUID, to be used once for the root partition.
 # You will probably prefer the previous release of this script!
-DEV=/dev/disk/by-uuid/put-the-uuid-of-your-usb-partition-here
 FSTYPE=ext2
 
 # define counter-intuitive shell logic values (based on /bin/true & /bin/false)
