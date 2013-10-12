@@ -45,6 +45,13 @@
 # * Changed a few minor cosmetic things, moved some global variables people might need
 #   to modify up top, and changed script output to match exactly the standard cryptsetup
 #   text as of Ubuntu 12.04
+#
+# 2013-10-12
+# Stripped down to a version that only mounts a specific LUKS crypted ext2 partition
+# specified by device name, to be used once for a root partition.
+# You will probably prefer the previous release of this script!
+DEV=/dev/disk/by-uuid/put-the-uuid-of-your-usb-partition-here
+FSTYPE=ext2
 
 # define counter-intuitive shell logic values (based on /bin/true & /bin/false)
 # NB. use FALSE only to *set* something to false, but don't test for
@@ -57,10 +64,6 @@ DEBUG=$TRUE
 
 # default path to key-file on the USB/MMC disk
 KEYFILE=".keyfile"
-
-# maximum time to sleep waiting for devices to become ready before
-# asking for passphrase
-MAX_SECONDS=2
 
 # is plymouth available? default false
 PLYMOUTH=$FALSE
@@ -166,150 +169,44 @@ MD=/tmp-usb-mount
 # line, then use it
 [ -n "$1" -a "$1" != "none" ] && KEYFILE=$1 # should use $CRYPTTAB_KEY instead? 
 
-# If the file already exists use it.
-# This is useful where an encrypted volume contains keyfile(s) for later
-# volumes and is now mounted and accessible
-if [ -f $KEYFILE ]; then
-    dbg TEXT "Found $KEYFILE"
-    cat $KEYFILE
-    OPENED=$TRUE
-    DEV="existing mount"
-    LABEL=""
-else
-    # Is the USB driver loaded?
-    cat /proc/modules | busybox grep usb_storage >/dev/null 2>&1
-    USBLOAD=0$?
-    if [ $USBLOAD -gt 0 ]; then
-        dbg TEXT "Loading driver 'usb_storage'"
-        modprobe usb_storage >/dev/null 2>&1
-    fi
-    
-    # Is the MMC (SDcard) driver loaded?
-    cat /proc/modules | busybox grep mmc >/dev/null 2>&1
-    MMCLOAD=0$?
-    if [ $MMCLOAD -gt 0 ]; then
-        dbg TEXT "Loading drivers 'mmc_block' and 'sdhci'"
-        modprobe mmc_block >/dev/null 2>&1
-        modprobe sdhci >/dev/null 2>&1
-    fi
+modprobe usb_storage >/dev/null 2>&1
+modprobe $FSTYPE >/dev/null 2>&1
 
-    USB_LOADED=$FALSE
-
-    mkdir -p $MD
-    dbg TEXT "Trying to get key-file '$KEYFILE' ..."
-    for SECONDS_SLEPT in $(seq 1 1 $MAX_SECONDS); do
-        for SDB in $(ls -d /sys/block/sd* /sys/block/mmc* 2> /dev/null); do
-            dbg TEXT "Examining $SDB" -n
-            # is it a USB device?
-            (cd ${SDB}/device && busybox pwd) | busybox grep 'usb\|mmc' >/dev/null 2>&1
-            USB=0$?
-            dbg TEXT ", USB/MMC=$USB" -n
-            # Is the device removable? (usb devices have this flag set, but mmc devices don't, is it really needed?)
-            #REMOVABLE=0`cat ${SDB}/removable`
-            #dbg TEXT ", REMOVABLE=$REMOVABLE" -n
-            #if [ $USB -ne $TRUE -o $REMOVABLE -ne 1 -o ! -f $SDB/dev ]; then
-            if [ $USB -ne $TRUE -o ! -f $SDB/dev ]; then
-                dbg TEXT ", device `busybox basename $SDB` ignored"
-                continue # for SDB
-            fi
-            USB_LOADED=$TRUE
-            for SFS in $(ls -d $SDB/sd* $SDB/mmc* 2> /dev/null); do
-                dbg TEXT ", *possible key device*" -n
-                DEV=`busybox basename $SFS`
-                # Check if key device itself is encrypted
-                /sbin/cryptsetup isLuks /dev/${DEV} >/dev/null 2>&1
-                ENCRYPTED=0$?
-                DECRYPTED=$FALSE
-                # Open crypted partition and prepare for mount
-                if [ $ENCRYPTED -eq $TRUE ]; then
-                    dbg TEXT ", encrypted device" -n
-                    # Use blkid to determine label
-                    LABEL=$(/sbin/blkid -s LABEL -o value /dev/${DEV})
-                    dbg TEXT ", label $LABEL" -n
-                    TRIES=3
-                    DECRYPTED=$FALSE
-                    while [ $TRIES -gt 0 -a $DECRYPTED -ne $TRUE ]; do
-                        TRIES=$(($TRIES-1))
-                        PASS="`readpass \"Enter LUKS password for key device ${DEV} (${LABEL}) (or empty to skip): \"`"
-                        if [ -z "$PASS" ]; then
-                            dbg TEXT ", device skipped" -n
-                            break
-                        fi
-                        echo $PASS | /sbin/cryptsetup luksOpen /dev/${DEV} bootkey >/dev/null 2>&1
-                        DECRYPTED=0$?
-                    done
-                    # If open failed, skip this device
-                    if [ $DECRYPTED -ne $TRUE ]; then
-                        dbg TEXT "decrypting device failed" -n
-                        break
-                    fi
-                    # Decrypted device to use
-                    DEV=mapper/bootkey
-                fi
-                dbg TEXT ", device $DEV" -n
-                # Use blkid to determine label
-                LABEL=$(/sbin/blkid -s LABEL -o value /dev/${DEV})
-                dbg TEXT ", label $LABEL" -n
-                # Use blkid to determine fstype
-                FSTYPE=$(/sbin/blkid -s TYPE -o value /dev/${DEV})
-                dbg TEXT ", fstype $FSTYPE" -n
-                # Is the file-system driver loaded?
-                cat /proc/modules | busybox grep $FSTYPE >/dev/null 2>&1
-                FSLOAD=0$?
-                if [ $FSLOAD -gt 0 ]; then
-                    dbg TEXT ", loading driver for $FSTYPE" -n
-                    # load the correct file-system driver
-                    modprobe $FSTYPE >/dev/null 2>&1
-                fi
-                dbg TEXT ", mounting /dev/$DEV on $MD" -n
-                mount /dev/${DEV} $MD -t $FSTYPE -o ro >/dev/null 2>&1
-                dbg TEXT ", (`mount | busybox grep $DEV`)" -n
-                dbg TEXT ", checking for $MD/$KEYFILE" -n
-                if [ -f $MD/$KEYFILE ]; then
-                    dbg TEXT ", found $MD/$KEYFILE" -n
-                    cat $MD/$KEYFILE
-                    OPENED=$TRUE
-                fi
-                dbg TEXT ", umount $MD" -n
-                umount $MD >/dev/null 2>&1
-                # Close encrypted key device
-                if [ $ENCRYPTED -eq $TRUE -a $DECRYPTED -eq $TRUE ]; then
-                    dbg TEXT ", closing encrypted device" -n
-                    /sbin/cryptsetup luksClose bootkey >/dev/null 2>&1
-                fi
-               dbg TEXT ", done"
-                if [ $OPENED -eq $TRUE ]; then
-                    break
-                fi
-                dbg CLEAR ""
-            done
-            # if we found the keyfile on one device, we don't want to process any more
-            if [ $OPENED -eq $TRUE ]; then
-                break
-            fi
-        done
-        # didn't find the keyfile, if USB is loaded we must give up, otherwise sleep for a second
-        if [ $USB_LOADED -eq $TRUE ]; then
-           dbg TEXT "USB/MMC Device found in less than ${SECONDS_SLEPT}s"
-           break
-        elif [ $SECONDS_SLEPT -ne $MAX_SECONDS ]; then
-           dbg TEXT "USB/MMC Device not found yet, sleeping for 1s and trying again"
-           sleep 1
-        else           
-           dbg TEXT "USB/MMC Device not found, giving up after ${MAX_SECONDS}s... (increase MAX_SECONDS?)"
-        fi
-    done
+TRIES=3
+DECRYPTED=$FALSE
+while [ $TRIES -gt 0 -a $DECRYPTED -ne $TRUE ]; do
+    TRIES=$(($TRIES-1))
+    PASS="`readpass \"Enter: \"`"
+    echo $PASS | /sbin/cryptsetup luksOpen /dev/${DEV} bootkey >/dev/null 2>&1
+    DECRYPTED=0$?
+done
+# If open failed, skip this device
+if [ $DECRYPTED -ne $TRUE ]; then
+    dbg TEXT "decrypting device failed" -n
+    break
 fi
+# Decrypted device to use
+DEV=mapper/bootkey
+mount /dev/mapper/bootkey $MD -t $FSTYPE -o ro >/dev/null 2>&1
+
+if [ -f $MD/$KEYFILE ]; then
+    dbg TEXT ", found $MD/$KEYFILE" -n
+    cat $MD/$KEYFILE
+    OPENED=$TRUE
+fi
+dbg TEXT ", umount $MD" -n
+umount $MD >/dev/null 2>&1
+# Close encrypted key device
+dbg TEXT ", closing encrypted device" -n
+/sbin/cryptsetup luksClose bootkey >/dev/null 2>&1
 
 # clear existing usplash text and status messages
 [ $USPLASH -eq $TRUE ] && msg STATUS "                               " && msg CLEAR ""
 
 if [ $OPENED -ne $TRUE ]; then
     dbg TEXT "Failed to find suitable USB/MMC key-file ..."
-    readpass "$(printf "Unlocking the disk $CRYPTTAB_SOURCE ($CRYPTTAB_NAME)\nEnter passphrase: ")"
+    readpass "$(printf "Enter passphrase: ")"
 else
-    dbg TEXT "Success loading key-file from $SFS ($LABEL)"
-    msg TEXT "Unlocking the disk $CRYPTTAB_SOURCE ($CRYPTTAB_NAME)"
 fi
 
 #
