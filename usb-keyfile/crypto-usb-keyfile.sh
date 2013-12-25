@@ -178,7 +178,7 @@ DECRYPTED=$FALSE
 while [ $TRIES -gt 0 -a $DECRYPTED -ne $TRUE ]; do
     TRIES=$(($TRIES-1))
     PASS="`readpass \"Enter: \"`"
-    echo $PASS | /sbin/cryptsetup luksOpen /dev/${DEV} bootkey >/dev/null 2>&1
+    echo $PASS | /sbin/cryptsetup luksOpen ${DEV} bootkey >/dev/null 2>&1
     DECRYPTED=0$?
 done
 # If open failed, skip this device
@@ -207,7 +207,6 @@ dbg TEXT ", closing encrypted device" -n
 if [ $OPENED -ne $TRUE ]; then
     dbg TEXT "Failed to find suitable USB/MMC key-file ..."
     readpass "$(printf "Enter passphrase: ")"
-else
 fi
 
 #
