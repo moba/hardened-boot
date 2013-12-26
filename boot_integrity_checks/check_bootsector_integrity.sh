@@ -1,10 +1,14 @@
 #!/bin/bash
+### BEGIN INIT INFO
+# Provides:          BootsectorIntegrityCheck 
+# Required-Start:    $local_fs $remote_fs 
+# Required-Stop:     $local_fs $remote_fs
+# Default-Start:     2 3 4 5 
+# Default-Stop:      
+# X-Interactive:     true
+# Short-Description: Run bootsector integrity check 
+### END INIT INFO
 
-## 
-## check_bootsector_integrity.sh
-##
-## compares hash of first 512 bytes on disk (MBR)
-## to stored hash
 ##
 ## 2013-10-09 moritz bartl
 ## public domain/cc0/wtfpl
